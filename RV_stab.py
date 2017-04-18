@@ -283,7 +283,7 @@ class RVSystem(RVPlanet):
 
         a0 = [planet.a for planet in ps]
 
-        stable = 1
+        stable = 2
 
         for i,t in enumerate(times): #Perform integration
             sim.integrate(t,exact_finish_time = exact)
