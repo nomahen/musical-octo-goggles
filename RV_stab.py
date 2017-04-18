@@ -239,7 +239,7 @@ class RVSystem(RVPlanet):
     def orbit_stab(self,periods=1e4,pnts_per_period=5,outputs_per_period=1,verbose=0,integrator='whfast',safe=1,
                    timing=0,save_output=0,plot=0,energy_err=0):
 
-        stable = 1
+
         deg2rad = np.pi/180.
         sim = rebound.Simulation()
         sim.integrator = integrator
@@ -282,6 +282,8 @@ class RVSystem(RVPlanet):
         #     sim.ri_whfast.safe_mode = 0
 
         a0 = [planet.a for planet in ps]
+
+        stable = 1
 
         for i,t in enumerate(times): #Perform integration
             sim.integrate(t,exact_finish_time = exact)
