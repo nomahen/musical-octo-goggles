@@ -74,7 +74,7 @@ class RVSystem(RVPlanet):
             r_AU = r/AU
             print "a_%i = %.3f AU" %(i,r_AU)
 
-    def plot_RV(self,epoch=2450000):
+    def plot_RV(self,epoch=2450000,save=0):
 
         """Make a plot of the RV time series with data and integrated curve"""
 
@@ -120,7 +120,7 @@ class RVSystem(RVPlanet):
             sim.integrate(t)
             rad_vels[i] = -ps['star'].vz * AU_day_to_m_s
 
-        plt.figure(1,figsize=(11,6)) #Plot RV
+        fig = plt.figure(1,figsize=(11,6)) #Plot RV
 
         plt.plot(times,rad_vels)
 
@@ -133,6 +133,10 @@ class RVSystem(RVPlanet):
         ax.xaxis.set_major_formatter(FormatStrFormatter('%.0f'))
 
         plt.show()
+
+        if save:
+            fig.savefig('tst.pdf')
+            print "Saved"
 
     def calc_chi2(self,epoch=2450000):
 
@@ -284,12 +288,14 @@ class RVSystem(RVPlanet):
         a0 = [planet.a for planet in ps]
 
         stable = 1
+        planet_stab = 0
 
         for i,t in enumerate(times): #Perform integration
             sim.integrate(t,exact_finish_time = exact)
             for k,planet in enumerate(ps):
-                if (np.abs((a0[k]-planet.a)/a0[k])>10) or planet.a < 0.1:
+                if (np.abs((a0[k]-planet.a)/a0[k])>1) or planet.a < 0.1:
                     stable = 0
+                    planet_stab = k
                 if plot:
                     semi_major_arr[k,i] = planet.a
             if verbose and (i % (Noutputs/10) == 0):
@@ -315,6 +321,9 @@ class RVSystem(RVPlanet):
 
             plt.xlabel("Time [Years]")
             plt.ylabel("a [AU]")
+
+            if not(stable):
+                print "Planet %i went unstable" %planet_stab
 
         return stable
 
