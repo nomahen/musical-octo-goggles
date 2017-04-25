@@ -41,7 +41,7 @@ class RVPlanet:
         self.pomega = pomega
         self.i = i
         self.Omega = Omega
-        self.l = M + pomega
+        self.l = (M + pomega)%360.
 
 
 class RVSystem(RVPlanet):
@@ -333,6 +333,81 @@ class RVSystem(RVPlanet):
             return self.log_like(epoch=epoch)
         else:
             return -np.inf
+
+
+    def plot_phi(self,p=2.,q=1.,pert_ind=0,test_ind=1,periods=1e2,pnts_per_period=100.,
+                outputs_per_period=20.,verbose=0,log_t = 0, integrator='whfast'):
+
+        deg2rad = np.pi/180.
+        sim = rebound.Simulation()
+        sim.integrator = integrator
+        exact = 1
+        if integrator != 'ias15':
+            exact = 0
+        sim.units = ('day', 'AU', 'Msun')
+        # sim.t = epoch #Epoch is the starting time of simulation
+        sim.add(m=self.mstar,hash='star')
+
+        min_per = np.inf
+        max_per = 0
+
+        res_inds = [pert_ind,test_ind]
+
+        per_max = 0
+        per_min = np.inf
+
+        for i,planet in enumerate(self.planets): #Add planets in self.planets to Rebound simulation
+            sim.add(m=planet.mass,P=planet.per,M=planet.M*deg2rad,e=planet.e,pomega=planet.pomega*deg2rad,
+                    inc=planet.i*deg2rad,Omega=planet.Omega*deg2rad)
+            if i in res_inds:
+                if planet.per > per_max:
+                    outer = i
+                    per_max = planet.per
+                if planet.per < per_min:
+                    inner = i
+                    per_min = planet.per
+
+
+            min_per = min(min_per,planet.per) #Minimum period
+            max_per = max(max_per,planet.per)
+
+        t_max = max_per*periods
+        Noutputs = int(t_max/min_per*outputs_per_period)
+        times = np.linspace(0,t_max, Noutputs)
+
+        sim.move_to_com()
+        sim.dt = min_per/pnts_per_period
+        ps = sim.particles[1:]
+
+        pert = ps[pert_ind]
+        test = ps[test_ind]
+        outer = ps[outer]
+        inner = ps[inner]
+
+        phi_arr = np.zeros(Noutputs)
+
+        for i,t in enumerate(times): #Perform integration
+            sim.integrate(t,exact_finish_time = exact)
+            phi_arr[i] = ((p+q)*outer.l - p*inner.l - q*test.pomega)%(2*np.pi)
+
+        angle_fixed = lambda phi: phi-2*np.pi if phi>np.pi else phi
+        phi_arr = [angle_fixed(phi) for phi in phi_arr]
+
+
+        plt.figure(1,figsize=(11,6))
+
+        if log_t:
+            plt.semilogx(times/365.25,phi_arr)
+        else:
+            plt.plot(times/365.25,phi_arr)
+
+        plt.xlabel("Time [Years]")
+        plt.ylabel(r"$\phi$ [deg]")
+
+        # print inner,outer
+
+
+
 
 
 
