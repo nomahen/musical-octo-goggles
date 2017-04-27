@@ -406,6 +406,20 @@ class RVSystem(RVPlanet):
 
         # print inner,outer
 
+    def save_params(self,fname):
+
+        param_arr = np.zeros((len(self.planets),7))
+
+        M_J = 9.5458e-4
+
+        for i,planet in enumerate(self.planets):
+            arr_tmp = [planet.per, planet.mass/M_J, planet.M, planet.e, planet.pomega, planet.i, planet.Omega]
+            param_arr[i] = arr_tmp
+
+        np.savetxt(fname,param_arr)
+        np.savetxt(fname + "_offsets",self.offsets)
+
+
 
 
 
