@@ -74,7 +74,7 @@ class RVSystem(RVPlanet):
             r_AU = r/AU
             print "a_%i = %.3f AU" %(i,r_AU)
 
-    def plot_RV(self,epoch=2450000,save=0):
+    def plot_RV(self,epoch=2450000,save=0,data=1):
 
         """Make a plot of the RV time series with data and integrated curve"""
 
@@ -124,8 +124,9 @@ class RVSystem(RVPlanet):
 
         plt.plot(times,rad_vels)
 
-        for i in range(len(self.RV_data)):
-            plt.errorbar(JDs[i],vels[i],yerr = errs[i],fmt='o')
+        if data:
+                for i in range(len(self.RV_data)):
+                    plt.errorbar(JDs[i],vels[i],yerr = errs[i],fmt='o')
 
         plt.xlabel("Time [JD]")
         plt.ylabel("RV [m/s]")
@@ -241,7 +242,7 @@ class RVSystem(RVPlanet):
         self.planets = []
 
     def orbit_stab(self,periods=1e4,pnts_per_period=5,outputs_per_period=1,verbose=0,integrator='whfast',safe=1,
-                   timing=0,save_output=0,plot=0,energy_err=0):
+                   timing=0,save_output=0,plot=0,energy_err=0,log=1):
 
 
         deg2rad = np.pi/180.
@@ -316,8 +317,13 @@ class RVSystem(RVPlanet):
         if plot:
             plt.figure(1,figsize=(11,6))
 
-            for i in range(len(ps)):
-                plt.semilogx(times/365.25,semi_major_arr[i])
+            if log:
+                for i in range(len(ps)):
+                    plt.semilogx(times/365.25,semi_major_arr[i])
+
+            else:
+                for i in range(len(ps)):
+                    plt.plot(times/365.25,semi_major_arr[i])
 
             plt.xlabel("Time [Years]")
             plt.ylabel("a [AU]")
@@ -326,6 +332,54 @@ class RVSystem(RVPlanet):
                 print "Planet %i went unstable" %planet_stab
 
         return stable
+
+    def RMS_RV(self,epoch=2450000):
+        JDs = []
+        vels = []
+        errs = []
+
+        for i,fname in enumerate(self.RV_data):
+            tmp_arr = np.loadtxt(self.path_to_data + fname)
+            JDs = np.concatenate((JDs,tmp_arr[:,0]))
+            vels = np.concatenate((vels,(tmp_arr[:,1]-self.offsets[i])))
+            errs = np.concatenate((errs,tmp_arr[:,2]))
+
+        #There might be a better way to do this -- these commands sort the data by time so that we can integrate
+        #up to each time
+        sort_arr = [JDs,vels,errs]
+        sort_arr = np.transpose(sort_arr)
+        sort_arr = sort_arr[np.argsort(sort_arr[:,0])]
+
+        deg2rad = np.pi/180.
+        sim = rebound.Simulation()
+        sim.units = ('day', 'AU', 'Msun')
+        sim.t = epoch
+        sim.add(m=self.mstar,hash='star')
+
+        for planet in self.planets:
+            sim.add(m=planet.mass,P=planet.per,M=planet.M*deg2rad,e=planet.e,pomega=planet.pomega*deg2rad,
+                    inc=planet.i*deg2rad,Omega=planet.Omega*deg2rad)
+
+        sim.move_to_com()
+        ps = sim.particles
+
+        times = sort_arr[:,0] #Times to integrate to are just the times for each data point, no need to integrate
+        #between data points
+
+        AU_day_to_m_s = 1.731456e6
+        rad_vels = np.zeros(len(times))
+
+        for i,t in enumerate(times):
+            sim.integrate(t)
+            rad_vels[i] = -ps['star'].vz * AU_day_to_m_s
+
+        RMS_RV = 0
+        for i,vel_theory in enumerate(rad_vels):
+                RMS_RV += (sort_arr[i,1]-vel_theory)**2
+
+        return np.sqrt(RMS_RV/len(times) )
+
+
 
     def stab_logprob(self,epoch=2450000):
         stable = self.orbit_stab(periods=1e4,pnts_per_period=10,outputs_per_period=1)
