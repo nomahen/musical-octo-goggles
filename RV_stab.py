@@ -4,6 +4,7 @@ import matplotlib as mpl
 import rebound
 from matplotlib.ticker import FormatStrFormatter
 import time
+import scipy.optimize as op
 
 plt.rcParams['legend.frameon'] = True
 plt.rcParams['legend.fontsize'] = 18
@@ -74,7 +75,7 @@ class RVSystem(RVPlanet):
             r_AU = r/AU
             print "a_%i = %.3f AU" %(i,r_AU)
 
-    def plot_RV(self,epoch=2450000,save=0,data=1):
+    def plot_RV(self,epoch=2450000,save=0,data=1,pnts_per_period=100.):
 
         """Make a plot of the RV time series with data and integrated curve"""
 
@@ -97,28 +98,38 @@ class RVSystem(RVPlanet):
 
 
         min_per = np.inf
+        max_per = 0
+
         for planet in self.planets: #Add planets in self.planets to Rebound simulation
             sim.add(m=planet.mass,P=planet.per,M=planet.M*deg2rad,e=planet.e,pomega=planet.pomega*deg2rad,
                     inc=planet.i*deg2rad,Omega=planet.Omega*deg2rad)
-            min_per = min(min_per,planet.per) #Minimum period, used for plotting purposes
+            min_per = min(min_per,planet.per) #Minimum period
+            max_per = max(max_per,planet.per)
+
         
         JD_max = max(np.amax(JDs[i]) for i in range(len(self.RV_data)))
         JD_min = min(np.amin(JDs[i]) for i in range(len(self.RV_data)))
-        
-        
-        Noutputs = int((JD_max-JD_min)/min_per*100.)
+
+
+        Noutputs = int((JD_max-JD_min)/min_per*pnts_per_period)
         
         sim.move_to_com()
         ps = sim.particles
 
         times = np.linspace(JD_min, JD_max, Noutputs)
+
+        if not(data):
+            Noutputs = 1000
+            times = np.linspace(0,10*max_per,Noutputs)
         AU_day_to_m_s = 1.731456e6 #Conversion factor from Rebound units to m/s
 
         rad_vels = np.zeros(Noutputs)
 
+
         for i,t in enumerate(times): #Perform integration
             sim.integrate(t)
             rad_vels[i] = -ps['star'].vz * AU_day_to_m_s
+            # print i
 
         fig = plt.figure(1,figsize=(11,6)) #Plot RV
 
@@ -139,7 +150,7 @@ class RVSystem(RVPlanet):
             fig.savefig('tst.pdf')
             print "Saved"
 
-    def calc_chi2(self,epoch=2450000):
+    def calc_chi2(self,epoch=2450000,dt=0):
 
         """Calculate the chi^2 value of the RV time series for the planets currently in the system"""
 
@@ -165,15 +176,21 @@ class RVSystem(RVPlanet):
         sim.t = epoch
         sim.add(m=self.mstar,hash='star')
 
+        min_per = np.inf
+
         for planet in self.planets:
             sim.add(m=planet.mass,P=planet.per,M=planet.M*deg2rad,e=planet.e,pomega=planet.pomega*deg2rad,
                     inc=planet.i*deg2rad,Omega=planet.Omega*deg2rad)
+            min_per = min(min_per,planet.per) #Minimum period
 
         sim.move_to_com()
         ps = sim.particles
 
         times = sort_arr[:,0] #Times to integrate to are just the times for each data point, no need to integrate
         #between data points
+
+        if dt:
+            sim.dt = min_per/dt
 
         AU_day_to_m_s = 1.731456e6
         rad_vels = np.zeros(len(times))
@@ -381,8 +398,8 @@ class RVSystem(RVPlanet):
 
 
 
-    def stab_logprob(self,epoch=2450000):
-        stable = self.orbit_stab(periods=1e4,pnts_per_period=10,outputs_per_period=1)
+    def stab_logprob(self,epoch=2450000,pnts_per_period=10):
+        stable = self.orbit_stab(periods=1e4,pnts_per_period=pnts_per_period,outputs_per_period=1)
         if stable:
             return self.log_like(epoch=epoch)
         else:
@@ -473,6 +490,216 @@ class RVSystem(RVPlanet):
         np.savetxt(fname,param_arr)
         np.savetxt(fname + "_offsets",self.offsets)
 
+    def plot_planet_RV(self,epoch=2450000):
+
+        """Make a plot of the RV time series for the star and planets"""
+
+        #Intialize Rebound simulation
+        deg2rad = np.pi/180.
+        sim = rebound.Simulation()
+        sim.units = ('day', 'AU', 'Msun')
+        sim.t = epoch #Epoch is the starting time of simulation
+        sim.add(m=self.mstar,hash='star')
+
+
+        min_per = np.inf
+        max_per = 0
+
+        for planet in self.planets: #Add planets in self.planets to Rebound simulation
+            sim.add(m=planet.mass,P=planet.per,M=planet.M*deg2rad,e=planet.e,pomega=planet.pomega*deg2rad,
+                    inc=planet.i*deg2rad,Omega=planet.Omega*deg2rad)
+            min_per = min(min_per,planet.per) #Minimum period
+            max_per = max(max_per,planet.per)
+
+        sim.move_to_com()
+        ps = sim.particles
+
+        Noutputs = 1000
+        times = np.linspace(0,10*max_per,Noutputs)
+
+        AU_day_to_m_s = 1.731456e6 #Conversion factor from Rebound units to m/s
+
+        rad_vels = np.zeros((len(sim.particles),Noutputs))
+
+
+        for i,t in enumerate(times): #Perform integration
+            sim.integrate(t)
+            rad_vels[0,i] = -ps['star'].vz * AU_day_to_m_s
+            for j,plan in enumerate(ps[1:]):
+                rad_vels[j+1,i] = plan.vz * AU_day_to_m_s * (self.planets[j].mass/self.mstar)
+            # print i
+
+        fig = plt.figure(1,figsize=(11,6)) #Plot RV
+
+        plt.plot(times,rad_vels[0])
+
+        for i in range(len(ps[1:])):
+            plt.plot(times,rad_vels[i+1],linestyle='dashed')
+
+        plt.xlabel("Time [JD]")
+        plt.ylabel("RV [m/s]")
+        ax = plt.gca()
+        ax.xaxis.set_major_formatter(FormatStrFormatter('%.0f'))
+
+        plt.show()
+
+
+    def plot_RV_kep(self,epoch=2450000,save=0):
+
+        """Make a plot of the RV time series with data and integrated curve"""
+
+        JDs = []
+        vels = []
+        errs = []
+
+        for i,fname in enumerate(self.RV_data): #Read in RV data
+            tmp_arr = np.loadtxt(self.path_to_data + fname)
+            JDs.append(tmp_arr[:,0])
+            vels.append(tmp_arr[:,1]-self.offsets[i])
+            errs.append(tmp_arr[:,2])
+
+        JDs = np.array(JDs) - epoch
+
+        JD_max = max(np.amax(JDs[i]) for i in range(len(self.RV_data)))
+        JD_min = min(np.amin(JDs[i]) for i in range(len(self.RV_data)))
+
+        min_per = np.inf
+        for planet in self.planets:
+            min_per = min(min_per,planet.per) #Minimum period
+
+
+        Noutputs = int((JD_max-JD_min)/min_per*100.)
+
+        times = np.linspace(JD_min, JD_max, Noutputs)
+        rad_vels = np.zeros(Noutputs)
+
+        deg2rad = np.pi/180.
+        t_p_arr = [-planet.M*deg2rad/2./np.pi*planet.per + planet.per for planet in self.planets]
+
+        def kep_sol(t=0,t_p=0,e=0.1,per=100.):
+            n = 2*np.pi/per
+            M = n*(t-t_p)
+
+            kep = lambda E: M - E + e*np.sin(E)
+
+            E = op.fsolve(kep,M)
+
+            return 2*np.arctan(np.sqrt((1+e)/(1-e))*np.tan(E/2))%(2*np.pi)
+
+        def RV_amp(m_star = 1.0, m_p = 9.5458e-4, omega = 0., i = np.pi/2., per = 365.25, f = 0., e = 0.0):
+            omega = omega*deg2rad
+            G = 6.67259e-11
+            m_sun = 1.988435e30
+            JD_sec = 86400.0
+
+            m_star_mks = m_star*m_sun
+            m_p_mks = m_p*m_sun
+
+            per_mks = per*JD_sec
+            n = 2.*np.pi/per_mks
+            a = (G*(m_star_mks + m_p_mks)/n**2.)**(1./3.)
+
+            return np.sqrt(G/(m_star_mks + m_p_mks)/a/(1-e**2.))*(m_p_mks*np.sin(i))*(np.cos(omega+f)+e*np.cos(omega))
+
+
+        for i,t in enumerate(times):
+            rv = 0
+            for j,planet in enumerate(self.planets):
+                f = kep_sol(t=t,t_p=t_p_arr[j],e=planet.e,per=planet.per)
+                rv += RV_amp(m_star = self.mstar, m_p = planet.mass, per = planet.per, f = f, e = planet.e,
+                             omega=planet.pomega)
+            rad_vels[i] = rv
+
+
+        fig = plt.figure(1,figsize=(11,6)) #Plot RV
+
+        plt.plot(times + epoch,rad_vels)
+
+        for i in range(len(self.RV_data)):
+            plt.errorbar(JDs[i] + epoch,vels[i],yerr = errs[i],fmt='o')
+
+        plt.xlabel("Time [JD]")
+        plt.ylabel("RV [m/s]")
+        ax = plt.gca()
+        ax.xaxis.set_major_formatter(FormatStrFormatter('%.0f'))
+
+        plt.show()
+
+        if save:
+            fig.savefig('tst.pdf')
+            print "Saved"
+
+    def calc_chi2_kep(self,epoch=2450000):
+
+        """Calculate the chi^2 value of the RV time series for the planets currently in the system"""
+
+        JDs = []
+        vels = []
+        errs = []
+
+        for i,fname in enumerate(self.RV_data):
+            tmp_arr = np.loadtxt(self.path_to_data + fname)
+            JDs = np.concatenate((JDs,tmp_arr[:,0]))
+            vels = np.concatenate((vels,(tmp_arr[:,1]-self.offsets[i])))
+            errs = np.concatenate((errs,tmp_arr[:,2]))
+
+        #There might be a better way to do this -- these commands sort the data by time so that we can integrate
+        #up to each time
+        sort_arr = [JDs,vels,errs]
+        sort_arr = np.transpose(sort_arr)
+        sort_arr = sort_arr[np.argsort(sort_arr[:,0])]
+
+        times = sort_arr[:,0]-epoch #Times to integrate to are just the times for each data point, no need to integrate
+        #between data points
+        rad_vels = np.zeros(len(times))
+
+        min_per = np.inf
+        for planet in self.planets:
+            min_per = min(min_per,planet.per) #Minimum period
+
+        deg2rad = np.pi/180.
+        t_p_arr = [-planet.M*deg2rad/2./np.pi*planet.per + planet.per for planet in self.planets]
+
+        def kep_sol(t=0,t_p=0,e=0.1,per=100.): #Solve Kepler's Equation for f eccentric anomaly, true anomaly
+            n = 2*np.pi/per
+            M = n*(t-t_p)
+
+            kep = lambda E: M - E + e*np.sin(E)
+
+            E = op.fsolve(kep,M)
+
+            return 2*np.arctan(np.sqrt((1+e)/(1-e))*np.tan(E/2))%(2*np.pi)
+
+        def RV_amp(m_star = 1.0, m_p = 9.5458e-4, omega = 0., i = np.pi/2., per = 365.25, f = 0., e = 0.0):
+            omega = omega*deg2rad
+            G = 6.67259e-11
+            m_sun = 1.988435e30
+            JD_sec = 86400.0
+
+            m_star_mks = m_star*m_sun
+            m_p_mks = m_p*m_sun
+
+            per_mks = per*JD_sec
+            n = 2.*np.pi/per_mks
+            a = (G*(m_star_mks + m_p_mks)/n**2.)**(1./3.)
+
+            return np.sqrt(G/(m_star_mks + m_p_mks)/a/(1-e**2.))*(m_p_mks*np.sin(i))*(np.cos(omega+f)+e*np.cos(omega))
+
+
+        for i,t in enumerate(times):
+            rv = 0
+            for j,planet in enumerate(self.planets):
+                f = kep_sol(t=t,t_p=t_p_arr[j],e=planet.e,per=planet.per)
+                rv += RV_amp(m_star = self.mstar, m_p = planet.mass, per = planet.per, f = f, e = planet.e,
+                             omega=planet.pomega)
+            rad_vels[i] = rv
+
+        chi_2 = 0
+
+        for i,vel_theory in enumerate(rad_vels):
+                chi_2 += (sort_arr[i,1]-vel_theory)**2/sort_arr[i,2]**2
+
+        return chi_2
 
 
 
