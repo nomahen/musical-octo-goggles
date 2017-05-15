@@ -380,6 +380,10 @@ class RVSystem(RVPlanet):
         sim.move_to_com()
         ps = sim.particles
 
+        planet_arr = ps[1:]
+
+        a0 = [planet.a for planet in planet_arr]
+
         times = sort_arr[:,0] #Times to integrate to are just the times for each data point, no need to integrate
         #between data points
 
@@ -388,6 +392,11 @@ class RVSystem(RVPlanet):
 
         for i,t in enumerate(times):
             sim.integrate(t)
+
+            for j,planet in enumerate(planet_arr):
+                if np.abs((planet.a - a0[i])/a0[i]) > 0.1:
+                    return -np.inf
+
             rad_vels[i] = -ps['star'].vz * AU_day_to_m_s
 
         RMS_RV = 0
@@ -407,7 +416,7 @@ class RVSystem(RVPlanet):
 
 
     def plot_phi(self,p=2.,q=1.,pert_ind=0,test_ind=1,periods=1e2,pnts_per_period=100.,
-                outputs_per_period=20.,verbose=0,log_t = 0, integrator='whfast'):
+                outputs_per_period=20.,verbose=0,log_t = 0, integrator='whfast',plot=1):
 
         deg2rad = np.pi/180.
         sim = rebound.Simulation()
@@ -464,16 +473,18 @@ class RVSystem(RVPlanet):
         angle_fixed = lambda phi: phi-2*np.pi if phi>np.pi else phi
         phi_arr = [angle_fixed(phi) for phi in phi_arr]
 
+        if plot:
+            plt.figure(1,figsize=(11,6))
 
-        plt.figure(1,figsize=(11,6))
+            if log_t:
+                plt.semilogx(times/365.25,phi_arr)
+            else:
+                plt.plot(times/365.25,phi_arr)
 
-        if log_t:
-            plt.semilogx(times/365.25,phi_arr)
-        else:
-            plt.plot(times/365.25,phi_arr)
+            plt.xlabel("Time [Years]")
+            plt.ylabel(r"$\phi$ [deg]")
 
-        plt.xlabel("Time [Years]")
-        plt.ylabel(r"$\phi$ [deg]")
+        return times, phi_arr
 
         # print inner,outer
 
