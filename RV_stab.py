@@ -62,16 +62,18 @@ class RVSystem(RVPlanet):
         JDs = []
         vels = []
         errs = []
+        dataset=[]
 
         for i,fname in enumerate(self.RV_files):
             tmp_arr = np.loadtxt(self.path_to_data + fname)
             JDs = np.concatenate((JDs,tmp_arr[:,0]))
             vels = np.concatenate((vels,(tmp_arr[:,1]-self.offsets[i])))
             errs = np.concatenate((errs,tmp_arr[:,2]))
+            dataset=np.concatenate((dataset,i*np.ones(len(tmp_arr[:,0]))))
 
         #There might be a better way to do this -- these commands sort the data by time so that we can integrate
         #up to each time
-        sort_arr = [JDs,vels,errs]
+        sort_arr = [JDs,vels,errs,dataset]
         sort_arr = np.transpose(sort_arr)
         self.RV_data = sort_arr[np.argsort(sort_arr[:,0])]
     
@@ -209,7 +211,7 @@ class RVSystem(RVPlanet):
         sim.move_to_com()
         ps = sim.particles
 
-        times = self.RV_data[:,0] #Times to integrate to are just the times for each data point, no need to integrate
+        times = self.RV_data[:][0] #Times to integrate to are just the times for each data point, no need to integrate
         #between data points
 
         AU_day_to_m_s = 1.731456e6
@@ -218,8 +220,8 @@ class RVSystem(RVPlanet):
         for i,t in enumerate(times):
             sim.integrate(t)
             rad_vels[i] = -ps['star'].vz * AU_day_to_m_s
-
-        return -0.5*np.sum((self.RV_data[:,1]-rad_vels)**2/self.RV_data[:,2]**2 + np.log(2*np.pi*self.RV_data[:,2]**2))
+        #print("Shape rad_vels:",rad_vels.shape,"Shape RV_data:",self.RV_data.shape)
+        return 2#-0.5*np.sum((self.RV_data[:,1]-rad_vels)**2/self.RV_data[:,2]**2 + np.log(2*np.pi*self.RV_data[:,2]**2))
 
     def rem_planet(self,i=0):
         del self.planets[i]
@@ -262,7 +264,7 @@ class RVSystem(RVPlanet):
         if plot:
             semi_major_arr = np.zeros((len(ps),Noutputs))
 
-         print (Noutputs)
+            print (Noutputs)
 
         if timing:
             start_time = time.time()
@@ -389,7 +391,7 @@ class RVSystem(RVPlanet):
 
         return times, phi_arr
 
-         print (inner,outer)
+        print (inner,outer)
 
     def save_params(self,fname):
 
@@ -441,7 +443,7 @@ class RVSystem(RVPlanet):
             rad_vels[0,i] = -ps['star'].vz * AU_day_to_m_s
             for j,plan in enumerate(ps[1:]):
                 rad_vels[j+1,i] = plan.vz * AU_day_to_m_s * (self.planets[j].mass/self.mstar)
-             print (i)
+            print (i)
 
         fig = plt.figure(1,figsize=(11,6)) #Plot RV
 
