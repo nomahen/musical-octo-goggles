@@ -259,7 +259,7 @@ class RVSystem(RVPlanet):
         self.planets = []
 
     def orbit_stab(self,periods=1e4,pnts_per_period=5,outputs_per_period=1,verbose=0,integrator='whfast',safe=1,
-                   timing=0,save_output=0,plot=0,energy_err=0,log=1):
+                   timing=0,save_output=0,plot=0,energy_err=0,log=1,ret_time = 0):
 
 
         deg2rad = np.pi/180.
@@ -321,6 +321,7 @@ class RVSystem(RVPlanet):
                 print "%2i %%" %(100*i/Noutputs)
 
             if stable == 0:
+                stab_time = t
                 break
 
         if timing:
@@ -347,8 +348,12 @@ class RVSystem(RVPlanet):
 
             if not(stable):
                 print "Planet %i went unstable" %planet_stab
-
-        return stable
+        if ret_time:
+            if stable:
+                stab_time = t
+            return stable, stab_time
+        else:
+            return stable
 
     def RMS_RV(self,epoch=2450000):
         JDs = []
@@ -407,8 +412,8 @@ class RVSystem(RVPlanet):
 
 
 
-    def stab_logprob(self,epoch=2450000,pnts_per_period=10):
-        stable = self.orbit_stab(periods=1e4,pnts_per_period=pnts_per_period,outputs_per_period=1)
+    def stab_logprob(self,epoch=2450000,pnts_per_period=10,periods=1e4):
+        stable = self.orbit_stab(periods=periods,pnts_per_period=pnts_per_period,outputs_per_period=1)
         if stable:
             return self.log_like(epoch=epoch)
         else:
@@ -416,7 +421,7 @@ class RVSystem(RVPlanet):
 
 
     def plot_phi(self,p=2.,q=1.,pert_ind=0,test_ind=1,periods=1e2,pnts_per_period=100.,
-                outputs_per_period=20.,verbose=0,log_t = 0, integrator='whfast',plot=1):
+                outputs_per_period=20.,verbose=0,log_t = 0, integrator='whfast',plot=1,ret_more = 0):
 
         deg2rad = np.pi/180.
         sim = rebound.Simulation()
@@ -448,8 +453,11 @@ class RVSystem(RVPlanet):
                     per_min = planet.per
 
 
+
             min_per = min(min_per,planet.per) #Minimum period
             max_per = max(max_per,planet.per)
+
+        print sim.status()
 
         t_max = max_per*periods
         Noutputs = int(t_max/min_per*outputs_per_period)
@@ -465,10 +473,16 @@ class RVSystem(RVPlanet):
         inner = ps[inner]
 
         phi_arr = np.zeros(Noutputs)
+        l_outer_arr = np.zeros(Noutputs)
+        l_inner_arr = np.zeros(Noutputs)
+        pomega_test_arr = np.zeros(Noutputs)
 
         for i,t in enumerate(times): #Perform integration
             sim.integrate(t,exact_finish_time = exact)
             phi_arr[i] = ((p+q)*outer.l - p*inner.l - q*test.pomega)%(2*np.pi)
+            l_outer_arr[i] = outer.l
+            l_inner_arr[i] = inner.l
+            pomega_test_arr[i] = test.pomega
 
         angle_fixed = lambda phi: phi-2*np.pi if phi>np.pi else phi
         phi_arr = [angle_fixed(phi) for phi in phi_arr]
@@ -483,6 +497,9 @@ class RVSystem(RVPlanet):
 
             plt.xlabel("Time [Years]")
             plt.ylabel(r"$\phi$ [deg]")
+
+        if ret_more:
+            return l_inner_arr, l_outer_arr, pomega_test_arr
 
         return times, phi_arr
 
@@ -711,6 +728,127 @@ class RVSystem(RVPlanet):
                 chi_2 += (sort_arr[i,1]-vel_theory)**2/sort_arr[i,2]**2
 
         return chi_2
+
+    def calc_megno(self,epoch=2450000,exit_dist_factor=5,min_rh=0.1,periods=1e4,pnts_per_period=20,outputs_per_period=10,\
+                   integrator='whfast'):
+
+        deg2rad = np.pi/180.
+        sim = rebound.Simulation()
+        sim.integrator = integrator
+        exact = 1
+        if integrator != 'ias15':
+            exact = 0
+        sim.units = ('day', 'AU', 'Msun')
+        # sim.t = epoch #Epoch is the starting time of simulation
+        sim.add(m=self.mstar,hash='star')
+
+        min_per = np.inf
+
+        max_per = 0
+        max_a = 0
+
+        for i,planet in enumerate(self.planets): #Add planets in self.planets to Rebound simulation
+            sim.add(m=planet.mass,P=planet.per,M=planet.M*deg2rad,e=planet.e,pomega=planet.pomega*deg2rad,
+                    inc=planet.i*deg2rad,Omega=planet.Omega*deg2rad)
+            min_per = min(min_per,planet.per) #Minimum period
+            max_per = max(max_per,planet.per)
+
+            part = sim.particles[i+1]
+            semi_maj = part.a
+            max_a = max(max_a,semi_maj)
+
+            rh = semi_maj*(part.m/3./self.mstar)**(1./3.)
+            min_rh = min(min_rh,rh)
+
+            # print rh,min_rh
+
+        # print max_a
+
+        t_max = max_per*periods
+        Noutputs = int(t_max/min_per*outputs_per_period)
+        times = np.linspace(0,t_max, Noutputs)
+
+        sim.move_to_com()
+        sim.dt = min_per/pnts_per_period
+        ps = sim.particles[1:]
+        #
+        sim.init_megno()
+        sim.exit_max_distance = exit_dist_factor*max_a
+        sim.exit_min_distance = min_rh
+        try:
+            sim.integrate(t_max, exact_finish_time=0)
+            megno = sim.calculate_megno()
+            return megno
+        except rebound.Escape:
+            return 100. # At least one particle got ejected, returning large MEGNO.
+        except rebound.Encounter:
+            return 100. # There was a close encounter, returning large MEGNO.
+        #
+        # if plot:
+        #     semi_major_arr = np.zeros((len(ps),Noutputs))
+        #
+        # # print Noutputs
+        #
+        # if timing:
+        #     start_time = time.time()
+        #
+        # if energy_err:
+        #     E0 = sim.calculate_energy()
+        #
+        # # if not(safe):
+        # #     sim.ri_whfast.safe_mode = 0
+        #
+        # a0 = [planet.a for planet in ps]
+        #
+        # stable = 1
+        # planet_stab = 0
+        #
+        # for i,t in enumerate(times): #Perform integration
+        #     sim.integrate(t,exact_finish_time = exact)
+        #     for k,planet in enumerate(ps):
+        #         if (np.abs((a0[k]-planet.a)/a0[k])>1) or planet.a < 0.1:
+        #             stable = 0
+        #             planet_stab = k
+        #         if plot:
+        #             semi_major_arr[k,i] = planet.a
+        #     if verbose and (i % (Noutputs/10) == 0):
+        #          # print "%3i %%" %(float(i+1)/float(Noutputs)*100.)
+        #         print "%2i %%" %(100*i/Noutputs)
+        #
+        #     if stable == 0:
+        #         stab_time = t
+        #         break
+        #
+        # if timing:
+        #     print "Integration took %.5f seconds" %(time.time() - start_time)
+        #
+        # if energy_err:
+        #     Ef = sim.calculate_energy()
+        #     print "Energy Error is %.3f%% " %(np.abs((Ef-E0)/E0*100))
+        #
+        #
+        # if plot:
+        #     plt.figure(1,figsize=(11,6))
+        #
+        #     if log:
+        #         for i in range(len(ps)):
+        #             plt.semilogx(times/365.25,semi_major_arr[i])
+        #
+        #     else:
+        #         for i in range(len(ps)):
+        #             plt.plot(times/365.25,semi_major_arr[i])
+        #
+        #     plt.xlabel("Time [Years]")
+        #     plt.ylabel("a [AU]")
+        #
+        #     if not(stable):
+        #         print "Planet %i went unstable" %planet_stab
+        # if ret_time:
+        #     if stable:
+        #         stab_time = t
+        #     return stable, stab_time
+        # else:
+        #     return stable
 
 
 
