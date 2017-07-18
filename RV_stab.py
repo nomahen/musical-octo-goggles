@@ -6,6 +6,7 @@ from matplotlib.ticker import FormatStrFormatter
 import time
 from operator import attrgetter
 import scipy.optimize as op
+from scipy import stats
 from pyevolve import Util
 from pyevolve import GTree
 from pyevolve import GSimpleGA
@@ -240,7 +241,17 @@ class RVSystem(RVPlanet):
                 chi_2 += (sort_arr[i,1]-vel_theory)**2/sort_arr[i,2]**2
 
         return chi_2
-
+    
+    def chi2_prob(self,chi=0,degrees=0):
+        
+        def uncertainty_chi2(degrees, chi):
+            x=stats.chi2.cdf(x=chi,df=degrees)
+            return x
+        
+        p=uncertainty_chi2(degrees,chi)
+        return p
+    
+    
     def log_like(self,epoch=2450000):
 
 
