@@ -851,7 +851,7 @@ class RVSystem(RVPlanet):
 
         return chi_2
 
-    def genetic_search(self,bounds,length,func1,num_gen=50,crossover=0.90,mutation=0.25,pop_size=400,freq_stat=10,minmax='minimize',cores=0):
+    def genetic_search(self,bounds,length,func1,func2=None,func3=None,num_func=1,num_gen=50,crossover=0.90,mutation=0.25,pop_size=400,freq_stat=10,minmax='minimize',cores=0,scaling=None):
         alleles=GAllele.GAlleles()
         length=length
         def Grid_Constructor(a=bounds):
@@ -868,8 +868,20 @@ class RVSystem(RVPlanet):
 #this initializes my chromosome
         genome.mutator.set(Mutators.G1DListMutatorAllele)
         genome.crossover.set(Crossovers.G1DListCrossoverSinglePoint)
-        genome.evaluator.set(func1)
-        #genome.evaluator.set(func2)
+        if num_func==1:
+            genome.evaluator.set(func1)
+        elif num_func==2:
+            genome.evaluator.set(func1)
+            genome.evaluator.set(func2)
+        elif num_func==3:
+            genome.evaluator.set(func1)
+            genome.evaluator.set(func2)
+            genome.evaluator.set(func3)
+        
+#switch statement to initialize amount and type of evaluator functions
+        
+
+
         ## genome side work here.. ## reference pe 0.6 as well as MLA master 
         ## can change both the crossover and mutator type problem-specific ##
         
@@ -892,6 +904,16 @@ class RVSystem(RVPlanet):
 #this sets our initial population that we want to observe, akin to MCMC walkers.
         ga.setElitism
 #this ensures that the best individual in the population reproduces, can be turned off once your 'zoomed' in
+#scaling switch here
+        stage_prop=ga.getPopulation()
+        if scaling == 'Power':
+            Scaling.PowerLawScaling(stage_prop)
+        
+ # only need Power scaling here, since the default scaling is linear. There's no documentation on their weights.           
+            
+#scaling here is very black-box, I don't like how they set up their weights. 
+# I am more inclined to adjust it on the evaluation function side using constants
+#multiplied into the score based on adjusted fitness, drawing from a distribution
         if cores == 0:
             ga.setMultiProcessing(False)
         else: 
