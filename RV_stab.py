@@ -186,7 +186,7 @@ class RVSystem(RVPlanet):
             fig.savefig('tst.pdf')
             print "Saved"
 
-    def calc_chi2(self,epoch=2450000,dt=0):
+    def calc_chi2(self,epoch=2450000,dt=0, star= None):
 
         """Calculate the chi^2 value of the RV time series for the planets currently in the system"""
 
@@ -205,7 +205,21 @@ class RVSystem(RVPlanet):
         sort_arr = [JDs,vels,errs]
         sort_arr = np.transpose(sort_arr)
         sort_arr = sort_arr[np.argsort(sort_arr[:,0])]
+# add term for jitter here dependent on type as well as sub-type, use switch statement 
+        jitter=np.zeros((len(errs),1))
+        dev_prime_Gdwarf=3.5
+        dev_prime_Atype=3.9
+# this term can be updated on star type being analyzed, if you need to add another star type just add a switch statement below
 
+
+        # here is switch for data type of star that needs to be added to chi-square calculation
+        if star == 'G Dwarf':
+            for x in (0,len(jitter)):
+                jitter[i]=dev_prime_Gdwarf
+        if star == 'A type':
+            for x in (0,len(jitter)):
+                jitter[i]=dev_prime_Atype
+        
         deg2rad = np.pi/180.
         sim = rebound.Simulation()
         sim.units = ('day', 'AU', 'Msun')
@@ -238,9 +252,9 @@ class RVSystem(RVPlanet):
         chi_2 = 0
 
         for i,vel_theory in enumerate(rad_vels):
-                chi_2 += (sort_arr[i,1]-vel_theory)**2/sort_arr[i,2]**2
-
-        return chi_2
+                chi_2 += (sort_arr[i,1]-vel_theory)**2/(sort_arr[i,2]**2+jitter[i]**2)
+# denominator is error term, addend using jitter term as well, this is set above via switch.
+        return np.asscalar(chi_2)
     
     def chi2_prob(self,chi=0,degrees=0):
         
@@ -539,8 +553,8 @@ class RVSystem(RVPlanet):
 
 
 
-    def stab_logprob(self,epoch=2450000,pnts_per_period=10):
-        stable = self.orbit_stab(periods=1e4,pnts_per_period=pnts_per_period,outputs_per_period=1)
+    def stab_logprob(self,epoch=2450000,pnts_per_period=10,time=1e4):
+        stable = self.orbit_stab(periods=time,pnts_per_period=pnts_per_period,outputs_per_period=1)
         if stable:
             return self.log_like(epoch=epoch)
         else:
