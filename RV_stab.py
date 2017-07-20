@@ -265,7 +265,84 @@ class RVSystem(RVPlanet):
         p=uncertainty_chi2(degrees,chi)
         return p
     
-    
+    def residuals(self,epoch=2450000,dt=0,star=None):
+        JDs = []
+        vels = []
+        errs = []
+
+        for i,fname in enumerate(self.RV_data):
+            tmp_arr = np.loadtxt(self.path_to_data + fname)
+            JDs = np.concatenate((JDs,tmp_arr[:,0]))
+            vels = np.concatenate((vels,(tmp_arr[:,1]-self.offsets[i])))
+            errs = np.concatenate((errs,tmp_arr[:,2]))
+
+        #There might be a better way to do this -- these commands sort the data by time so that we can integrate
+        #up to each time
+        sort_arr = [JDs,vels,errs]
+        sort_arr = np.transpose(sort_arr)
+        sort_arr = sort_arr[np.argsort(sort_arr[:,0])]
+# add term for jitter here dependent on type as well as sub-type, use switch statement 
+        jitter=np.zeros((len(errs),1))
+        dev_prime_Gdwarf=3.5
+        dev_prime_Atype=3.9
+# this term can be updated on star type being analyzed, if you need to add another star type just add a switch statement below
+
+
+        # here is switch for data type of star that needs to be added to chi-square calculation
+        if star == 'G Dwarf':
+            for x in (0,len(jitter)):
+                jitter[i]=dev_prime_Gdwarf
+        if star == 'A type':
+            for x in (0,len(jitter)):
+                jitter[i]=dev_prime_Atype
+        
+        deg2rad = np.pi/180.
+        sim = rebound.Simulation()
+        sim.units = ('day', 'AU', 'Msun')
+        sim.t = epoch
+        sim.add(m=self.mstar,hash='star')
+
+        min_per = np.inf
+
+        for planet in self.planets:
+            sim.add(m=planet.mass,P=planet.per,M=planet.M*deg2rad,e=planet.e,pomega=planet.pomega*deg2rad,
+                    inc=planet.i*deg2rad,Omega=planet.Omega*deg2rad)
+            min_per = min(min_per,planet.per) #Minimum period
+
+        sim.move_to_com()
+        ps = sim.particles
+
+        times = sort_arr[:,0] #Times to integrate to are just the times for each data point, no need to integrate
+        #between data points
+
+        if dt:
+            sim.dt = min_per/dt
+
+        AU_day_to_m_s = 1.731456e6
+        rad_vels = np.zeros(len(times))
+
+        for i,t in enumerate(times):
+            sim.integrate(t)
+            rad_vels[i] = -ps['star'].vz * AU_day_to_m_s
+          
+        residuals=np.zeros((len(errs),1))
+        
+        for i,vel_theory in enumerate(rad_vels):
+            residuals[i]=(sort_arr[i,1]-vel_theory)/np.sqrt(np.abs(vel_theory))
+            
+            
+        n_bins=40
+        #gauss=np.linspace(stats.norm.ppf(0.01),stats.norm.ppf(0.99), len(residuals))
+        #hist_data = np.vstack([residuals, gauss]).T
+        #plt.hist(gauss, n_bins, alpha=0.7, label='Gaussian')
+        plt.hist(residuals,n_bins,label='residuals')
+        plt.show()
+        
+        Ksm=stats.kstest(residuals,'norm')
+        return Ksm
+        
+        
+        pyplot.show()
     def log_like(self,epoch=2450000):
 
 
