@@ -520,8 +520,8 @@ class RVSystem(RVPlanet):
 
 
 
-    def stab_logprob(self,epoch=2450000,pnts_per_period=10,periods=1e4):
-        stable = self.orbit_stab(periods=periods,pnts_per_period=pnts_per_period,outputs_per_period=1)
+    def stab_logprob(self,epoch=2450000,pnts_per_period=10,periods=1e4,escape=1):
+        stable = self.orbit_stab(periods=periods,pnts_per_period=pnts_per_period,outputs_per_period=1,escape=escape)
         if stable:
             return self.log_like(epoch=epoch)
         else:
@@ -924,13 +924,13 @@ class RVSystem(RVPlanet):
         except rebound.Encounter:
             return 100. # There was a close encounter, returning large MEGNO.
     def megno_logprob (self, epoch=2450000,exit_dist_factor=5,min_rh=0.1,periods_megno=1e4,pnts_per_period_megno=20, outputs_per_period=10, \
-                   integrator='whfast',pnts_per_period=10,periods=1e4, megno_thresh=30):
+                   integrator='whfast',pnts_per_period=10,periods=1e4, megno_thresh=30,escape=0):
         '''calculates MEGNO, then stab_logprob if megno is less than condition. 
         This looks messy since the function takes all the parameters for the calc_megno function and those for stab logprob'''
         
         megno = self.calc_megno (epoch=epoch,exit_dist_factor=exit_dist_factor,min_rh=min_rh,periods=periods_megno,pnts_per_period= pnts_per_oeriod_megno, outputs_per_period=outputs_per_period,integrator='whfast')
         if megno<megno_thresh:
-            return self.stab_logprob(epoch=epoch,pnts_per_period=pnts_per_period,periods=periods)
+            return self.stab_logprob(epoch=epoch,pnts_per_period=pnts_per_period,periods=periods,escape=escape)
         else:
             return -np.inf
         
