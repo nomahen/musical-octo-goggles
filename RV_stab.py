@@ -18,7 +18,7 @@ from pyevolve import Initializators
 from pyevolve import Mutators
 from pyevolve import Scaling
 from pyevolve import Selectors
-
+from pyevolve import DBAdapters
 
 plt.rcParams['legend.frameon'] = True
 plt.rcParams['legend.fontsize'] = 18
@@ -111,7 +111,7 @@ class RVSystem(RVPlanet):
             r_AU = r/AU
             print "a_%i = %.3f AU" %(i,r_AU)
 
-    def plot_RV(self,epoch=2450000,save=0,data=1,pnts_per_period=100.):
+    def plot_RV(self,epoch=2450000,data=1,pnts_per_period=100.,save=0,filename=None):
 
         """Make a plot of the RV time series with data and integrated curve"""
 
@@ -179,13 +179,13 @@ class RVSystem(RVPlanet):
         plt.ylabel("RV [m/s]")
         ax = plt.gca()
         ax.xaxis.set_major_formatter(FormatStrFormatter('%.0f'))
-
+        if save == 1:
+            plt.savefig(filename)
+         
+        
         plt.show()
 
-        if save:
-            fig.savefig('tst.pdf')
-            print "Saved"
-
+       
     def calc_chi2(self,epoch=2450000,dt=0, star= None):
 
         """Calculate the chi^2 value of the RV time series for the planets currently in the system"""
@@ -265,7 +265,7 @@ class RVSystem(RVPlanet):
         p=uncertainty_chi2(degrees,chi)
         return p
     
-    def residuals(self,epoch=2450000,dt=0,star=None):
+    def residuals(self,epoch=2450000,dt=0,star=None,save=0,filename=None):
         JDs = []
         vels = []
         errs = []
@@ -339,10 +339,15 @@ class RVSystem(RVPlanet):
         #plt.hist(gauss, n_bins, alpha=0.7, label='Gaussian')
         plt.hist(residuals,n_bins,label='residuals')
         plt.xlabel('Residuals')
+        if save == 1:
+            plt.savefig(filename)
         plt.show()
         plt.hist(chi,n_bins,label='chi distribution')
         plt.xlabel('Distribution')
         plt.show()
+        
+            
+        
         Ksm=stats.kstest(residuals,'norm')
         return Ksm
         
@@ -495,7 +500,7 @@ class RVSystem(RVPlanet):
     
     
     def orbit_stab(self,periods=1e4,pnts_per_period=5,outputs_per_period=1,verbose=0,integrator='whfast',safe=1,
-                   timing=0,save_output=0,plot=0,energy_err=0):
+                   timing=0,save_output=0,plot=0,energy_err=0,save=0,filename=None):
 
 
         deg2rad = np.pi/180.
@@ -574,7 +579,8 @@ class RVSystem(RVPlanet):
 
             plt.xlabel("Time [Years]")
             plt.ylabel("a [AU]")
-           
+            if save == 1:
+                plt.savefig(filename)
 
         return stable
 
@@ -947,7 +953,7 @@ class RVSystem(RVPlanet):
 
         return chi_2
 
-    def genetic_search(self,bounds,length,func1,func2=None,func3=None,num_func=1,num_gen=50,crossover=0.90,mutation=0.25,pop_size=400,freq_stat=10,minmax='minimize',cores=0,scaling=None):
+    def genetic_search(self,bounds,length,func1,func2=None,func3=None,num_func=1,num_gen=50,crossover=0.90,mutation=0.25,pop_size=400,freq_stat=10,minmax='minimize',cores=0,scaling=None,database=0,file_name=None):
         alleles=GAllele.GAlleles()
         length=length
         def Grid_Constructor(a=bounds):
@@ -983,6 +989,9 @@ class RVSystem(RVPlanet):
         
         ga = GSimpleGA.GSimpleGA(genome)
         #starts  algorithm engine
+        if database == 1:
+            sqlite_adapter = DBAdapters.DBSQLite(identify=file_name)
+            ga.setDBAdapter(sqlite_adapter)
 
         ga.setMinimax(Consts.minimaxType[minmax])
 #sets type of operation we want the algorithm to work on 
