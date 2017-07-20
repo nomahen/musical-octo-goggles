@@ -326,18 +326,23 @@ class RVSystem(RVPlanet):
             rad_vels[i] = -ps['star'].vz * AU_day_to_m_s
           
         residuals=np.zeros((len(errs),1))
+        chi=np.zeros((len(errs),1))
         
         for i,vel_theory in enumerate(rad_vels):
             residuals[i]=(sort_arr[i,1]-vel_theory)/np.sqrt(np.abs(sort_arr[i,2]))
             
-            
+        for i,vel_theory in enumerate(rad_vels):
+            chi[i] = (sort_arr[i,1]-vel_theory)**2/(sort_arr[i,2]**2+jitter[i]**2)   
         n_bins=40
         #gauss=np.linspace(stats.norm.ppf(0.01),stats.norm.ppf(0.99), len(residuals))
         #hist_data = np.vstack([residuals, gauss]).T
         #plt.hist(gauss, n_bins, alpha=0.7, label='Gaussian')
         plt.hist(residuals,n_bins,label='residuals')
+        plt.xlabel('Residuals')
         plt.show()
-        
+        plt.hist(chi,n_bins,label='chi distribution')
+        plt.xlabel('Distribution')
+        plt.show()
         Ksm=stats.kstest(residuals,'norm')
         return Ksm
         
