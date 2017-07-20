@@ -328,7 +328,7 @@ class RVSystem(RVPlanet):
         residuals=np.zeros((len(errs),1))
         
         for i,vel_theory in enumerate(rad_vels):
-            residuals[i]=(sort_arr[i,1]-vel_theory)/np.sqrt(np.abs(vel_theory))
+            residuals[i]=(sort_arr[i,1]-vel_theory)/np.sqrt(np.abs(sort_arr[i,2]))
             
             
         n_bins=40
