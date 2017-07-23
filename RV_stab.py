@@ -953,7 +953,7 @@ class RVSystem(RVPlanet):
 
         return chi_2
 
-    def genetic_search(self,bounds,length,func1,func2=None,func3=None,num_func=1,num_gen=50,crossover=0.90,mutation=0.25,pop_size=400,freq_stat=10,minmax='minimize',cores=0,scaling=None,database=0,file_name=None):
+    def genetic_search(self,bounds,length,func1,func2=None,func3=None,num_func=1,num_gen=50,crossover=0.90,mutation=0.25,pop_size=400,freq_stat=10,minmax='minimize',cores=0,scaling=None,database=0,file_name=None,elitism=0):
         alleles=GAllele.GAlleles()
         length=length
         def Grid_Constructor(a=bounds):
@@ -1007,7 +1007,8 @@ class RVSystem(RVPlanet):
 
         ga.setPopulationSize(pop_size)
 #this sets our initial population that we want to observe, akin to MCMC walkers.
-        ga.setElitism
+        if elitism == 1:
+            ga.setElitism
 #this ensures that the best individual in the population reproduces, can be turned off once your 'zoomed' in
 #scaling switch here
         stage_prop=ga.getPopulation()
