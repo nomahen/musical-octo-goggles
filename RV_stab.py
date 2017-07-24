@@ -68,14 +68,15 @@ class RVSystem(RVPlanet):
         
         self.mstar = mstar #Mass of central star
         self.planets = [] #Array containing RVPlanets class
-        self.RV_files = [] #Array of RV velocities, assumed to be of the form: JD, RV, error
+        self.RV_files = []#Array of file names containing data. Assumed to be standard vels files.
         self.offsets = [] #Array of constant velocity offsets for each data set
         self.path_to_data = "" #Optional prefix that points to location of datasets
-        self.RV_data=[]
+        self.RV_data=[] #Array of RV velocities, assumed to be of the form: JD, RV, error
     
-    def sort_data(self):    
+    def sort_data(self):
+        '''Sorts data so we can integrate up to each time'''
         if self.offsets==[]:
-            self.offsets=np.ndarray(len(self.RV_files))
+            self.offsets=np.zeros(len(self.RV_files))
         JDs = []
         vels = []
         errs = []
@@ -88,8 +89,6 @@ class RVSystem(RVPlanet):
             errs = np.concatenate((errs,tmp_arr[:,2]))
             dataset=np.concatenate((dataset,i*np.ones(len(tmp_arr[:,0]))))
 
-        #There might be a better way to do this -- these commands sort the data by time so that we can integrate
-        #up to each time
         sort_arr = [JDs,vels,errs,dataset]
         sort_arr = np.transpose(sort_arr)
         self.RV_data = sort_arr[np.argsort(sort_arr[:,0])]
@@ -239,9 +238,8 @@ class RVSystem(RVPlanet):
             sim.integrate(t)
             rad_vels[i] = -ps['star'].vz * AU_day_to_m_s
 
-        chi_2 = np.sum(self.RV_data[:,1]-rad_vels)**2/(self.RV_data[:,2]**2+jitter**2)
+        return np.sum((self.RV_data[:,1]-rad_vels)**2/(self.RV_data[:,2]**2+jitter**2))
 
-        return chi_2
     
     def chi2_prob(self,chi=0,degrees=0):
         return stats.chi2.cdf(x=chi,df=degrees)
@@ -255,7 +253,6 @@ class RVSystem(RVPlanet):
 
         # here is switch for data type of star that needs to be added to chi-square calculation
         if star == 'G Dwarf':
-            
             jitter=jitter*dev_prime_Gdwarf
         if star == 'A type':
             jitter=jitter*dev_prime_Atype
@@ -291,7 +288,7 @@ class RVSystem(RVPlanet):
             sim.integrate(t)
             rad_vels[i] = -ps['star'].vz * AU_day_to_m_s
             
-        residuals=(self.RV_data[:,1]-rad_vels)/np.sqrt(np.abs(self.RV_data[:,2])
+        residuals=(self.RV_data[:,1]-rad_vels)/np.sqrt(np.abs(self.RV_data[:,2]))
         
         n_bins=40
         #gauss=np.linspace(stats.norm.ppf(0.01),stats.norm.ppf(0.99), len(residuals))
@@ -306,10 +303,7 @@ class RVSystem(RVPlanet):
 
     def log_like(self,epoch=2450000):
 
-
         """Calculate the log likelihood for MCMC"""
-
-        
 
         deg2rad = np.pi/180.
         sim = rebound.Simulation()
@@ -324,7 +318,7 @@ class RVSystem(RVPlanet):
         sim.move_to_com()
         ps = sim.particles
 
-        times = self.RV_data[:][0] #Times to integrate to are just the times for each data point, no need to integrate
+        times = self.RV_data[:,0] #Times to integrate to are just the times for each data point, no need to integrate
         #between data points
 
         AU_day_to_m_s = 1.731456e6
@@ -333,7 +327,7 @@ class RVSystem(RVPlanet):
         for i,t in enumerate(times):
             sim.integrate(t)
             rad_vels[i] = -ps['star'].vz * AU_day_to_m_s
-        #print("Shape rad_vels:",rad_vels.shape,"Shape RV_data:",self.RV_data.shape)
+            
         return -0.5*np.sum((self.RV_data[:,1]-rad_vels)**2/self.RV_data[:,2]**2 + np.log(2*np.pi*self.RV_data[:,2]**2))
 
     def rem_planet(self,i=0):
@@ -343,9 +337,10 @@ class RVSystem(RVPlanet):
         self.planets = []
 
     def orbit_stab(self,periods=1e4,pnts_per_period=50,outputs_per_period=1,verbose=0,integrator='whfast',safe=1,
-                   timing=0,save_output=0,plot=0,energy_err=0,log=1,ret_time = 0, escape=0):
+                   timing=0,save_output=0,plot=0,energy_err=0,log=1,ret_time = 0,escape=0,save=0, fname=None):
 
-
+        '''Determines if System is stable for given timescale'''
+        
         deg2rad = np.pi/180.
         sim = rebound.Simulation()
         sim.integrator = integrator
@@ -353,7 +348,6 @@ class RVSystem(RVPlanet):
         if integrator != 'ias15':
             exact = 0
         sim.units = ('day', 'AU', 'Msun')
-        # sim.t = epoch #Epoch is the starting time of simulation
         sim.add(m=self.mstar,hash='star')
 
       
@@ -392,7 +386,11 @@ class RVSystem(RVPlanet):
 
         stable = 1
         planet_stab = 0
-        if escape:#Faster method of calculating stability. Currently does not support plot function as this slows it down.
+        
+        if save:
+            sim.initSimulationArchive(fname+'.bin', interval=1e3)
+        
+        if escape and not plot:#Faster method of calculating stability. 
             R_h = np.array([(planet.m/(3*sim.particles[0].m))**1/3 for planet in ps])*a0
             sim.exit_min_distance=R_h.min()
             sim.exit_max_distance = 2*a0.max()
@@ -424,7 +422,6 @@ class RVSystem(RVPlanet):
                 if verbose and (i % (Noutputs/10) == 0):
                     print ("%3i %%" %(float(i+1)/float(Noutputs)*100.))
                     print ("%2i %%" %(100*i/Noutputs))
-
                 if stable == 0:
                     stab_time = t
                     break
@@ -464,21 +461,6 @@ class RVSystem(RVPlanet):
             return stable
 
     def RMS_RV(self,epoch=2450000):
-        JDs = []
-        vels = []
-        errs = []
-
-        for i,fname in enumerate(self.RV_data):
-            tmp_arr = np.loadtxt(self.path_to_data + fname)
-            JDs = np.concatenate((JDs,tmp_arr[:,0]))
-            vels = np.concatenate((vels,(tmp_arr[:,1]-self.offsets[i])))
-            errs = np.concatenate((errs,tmp_arr[:,2]))
-
-        #There might be a better way to do this -- these commands sort the data by time so that we can integrate
-        #up to each time
-        sort_arr = [JDs,vels,errs]
-        sort_arr = np.transpose(sort_arr)
-        sort_arr = sort_arr[np.argsort(sort_arr[:,0])]
 
         deg2rad = np.pi/180.
         sim = rebound.Simulation()
@@ -497,7 +479,7 @@ class RVSystem(RVPlanet):
 
         a0 = [planet.a for planet in planet_arr]
 
-        times = sort_arr[:,0] #Times to integrate to are just the times for each data point, no need to integrate
+        times = self.RV_data[:,0] #Times to integrate to are just the times for each data point, no need to integrate
         #between data points
 
         AU_day_to_m_s = 1.731456e6
@@ -511,16 +493,14 @@ class RVSystem(RVPlanet):
                     return -np.inf
 
             rad_vels[i] = -ps['star'].vz * AU_day_to_m_s
+       
+        return np.sqrt((self.RV_data[:,1]-rad_vels)**2/len(times))
 
-        RMS_RV = 0
-        for i,vel_theory in enumerate(rad_vels):
-                RMS_RV += (sort_arr[i,1]-vel_theory)**2
-
-        return np.sqrt(RMS_RV/len(times) )
 
 
 
     def stab_logprob(self,epoch=2450000,pnts_per_period=10,periods=1e4,escape=1):
+        '''checks stability before cheking log_prob'''
         stable = self.orbit_stab(periods=periods,pnts_per_period=pnts_per_period,outputs_per_period=1,escape=escape)
         if stable:
             return self.log_like(epoch=epoch)
@@ -529,7 +509,7 @@ class RVSystem(RVPlanet):
         
     def plot_phi(self,p=2.,q=1.,pert_ind=0,test_ind=1,periods=1e2,pnts_per_period=100.,
                 outputs_per_period=20.,verbose=0,log_t = 0, integrator='whfast',plot=1):
-
+        '''traces conjunction angle over time of 2 specified planets'''
         deg2rad = np.pi/180.
         sim = rebound.Simulation()
         sim.integrator = integrator
@@ -798,17 +778,14 @@ class RVSystem(RVPlanet):
 
 
     def genetic_search(self,bounds,length,func1,func2=None,func3=None,num_func=1,num_gen=50,crossover=0.90,mutation=0.25,pop_size=400,freq_stat=10,minmax='minimize',cores=0,scaling=None):
+        '''Uses a genetic algorithm to find stable sets of parameters'''
         alleles=GAllele.GAlleles()
-        length=length
-        def Grid_Constructor(a=bounds):
-            alleles = GAllele.GAlleles()
-            for i in range(0, length):
-                alleles.add(GAllele.GAlleleRange(bounds[i][0], bounds[i][1], real=True))
-            return alleles
+        for i in range(0, length):
+            alleles.add(GAllele.GAlleleRange(bounds[i][0], bounds[i][1], real=True))
         genome = G1DList.G1DList(length)
                 # now I am initializing my chromosome
 
-        genome.setParams(allele=Grid_Constructor())
+        genome.setParams(allele=alleles)
 #this sets my genome parameters specific to the batched 'data' or parameters that I want to use
         genome.initializator.set(Initializators.G1DListInitializatorAllele)
 #this initializes my chromosome
@@ -855,7 +832,7 @@ class RVSystem(RVPlanet):
         if scaling == 'Power':
             Scaling.PowerLawScaling(stage_prop)
         
- # only need Power scaling here, since the default scaling is linear. There's no documentation on their weights.           
+# only need Power scaling here, since the default scaling is linear. There's no documentation on their weights.           
             
 #scaling here is very black-box, I don't like how they set up their weights. 
 # I am more inclined to adjust it on the evaluation function side using constants
@@ -869,9 +846,10 @@ class RVSystem(RVPlanet):
 #starts up evolution, returns best candidate
         ga.evolve(freq_stats=freq_stat) 
         return ga.bestIndividual()
-    def calc_megno(self,epoch=2450000,exit_dist_factor=5,min_rh=0.1,periods=1e4,pnts_per_period=20,outputs_per_period=10,\
+    
+    def calc_megno(self,exit_dist_factor=5,min_rh=0.1,periods=1e4,pnts_per_period=20,outputs_per_period=10,\
                    integrator='whfast'):
-
+           '''Calculates MEGNO, a fast indicator of chaos'''
         deg2rad = np.pi/180.
         sim = rebound.Simulation()
         sim.integrator = integrator
@@ -879,7 +857,6 @@ class RVSystem(RVPlanet):
         if integrator != 'ias15':
             exact = 0
         sim.units = ('day', 'AU', 'Msun')
-        # sim.t = epoch #Epoch is the starting time of simulation
         sim.add(m=self.mstar,hash='star')
 
         min_per = np.inf
@@ -900,9 +877,7 @@ class RVSystem(RVPlanet):
             rh = semi_maj*(part.m/3./self.mstar)**(1./3.)
             min_rh = min(min_rh,rh)
 
-            # print rh,min_rh
-
-        # print max_a
+          
 
         t_max = max_per*periods
         Noutputs = int(t_max/min_per*outputs_per_period)
@@ -923,6 +898,7 @@ class RVSystem(RVPlanet):
             return 100. # At least one particle got ejected, returning large MEGNO.
         except rebound.Encounter:
             return 100. # There was a close encounter, returning large MEGNO.
+        
     def megno_logprob (self, epoch=2450000,exit_dist_factor=5,min_rh=0.1,periods_megno=1e4,pnts_per_period_megno=20, outputs_per_period=10, \
                    integrator='whfast',pnts_per_period=10,periods=1e4, megno_thresh=30,escape=0):
         '''calculates MEGNO, then stab_logprob if megno is less than condition. 
